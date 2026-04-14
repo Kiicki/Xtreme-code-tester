@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="nb">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IPTV Server Tester</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #f4f4f2;
+    color: #1a1a18;
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+  .card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #e0dfd8;
+    padding: 2rem;
+    width: 100%;
+    max-width: 520px;
+  }
+  h1 { font-size: 18px; font-weight: 600; margin: 0 0 0.2rem; }
+  .sub { font-size: 13px; color: #999; margin: 0 0 1.5rem; }
+  label { display: block; font-size: 13px; color: #666; margin-bottom: 5px; }
+  input[type=text], input[type=password] {
+    width: 100%; padding: 10px 12px; font-size: 15px;
+    border: 1px solid #ddd; border-radius: 8px;
+    background: #fafafa; color: #1a1a18;
+    outline: none; transition: border 0.15s;
+    margin-bottom: 6px;
+  }
+  input:focus { border-color: #1a56c4; background: #fff; }
+  .hint { font-size: 12px; color: #bbb; margin: 0 0 14px; }
+  button.primary {
+    width: 100%; padding: 11px; font-size: 14px; font-weight: 600;
+    background: #1a56c4; color: #fff;
+    border: none; border-radius: 8px; cursor: pointer;
+  }
+  button.primary:hover { background: #1445a8; }
+  button.primary:disabled { background: #aac0e8; cursor: not-allowed; }
+  .result {
+    margin-top: 18px; border-radius: 10px;
+    border: 1px solid #e0dfd8; overflow: hidden;
+    display: none;
+  }
+  .result-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 13px 16px; background: #fafafa;
+    border-bottom: 1px solid #e0dfd8;
+  }
+  .dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
+  .dot.ok   { background: #4a9e2a; }
+  .dot.fail { background: #d93030; }
+  .dot.spin { background: #aaa; animation: p 1s infinite; }
+  @keyframes p { 0%,100%{opacity:1} 50%{opacity:0.2} }
+  .result-header h3 { margin: 0; font-size: 14px; font-weight: 600; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 8px 16px; font-size: 13px; }
+  tr:not(:last-child) td { border-bottom: 1px solid #f0efe8; }
+  td:first-child { color: #888; width: 40%; }
+  td:last-child { font-weight: 500; }
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+  .badge.ok   { background: #eaf3de; color: #2f6e10; }
+  .badge.fail { background: #fce8e8; color: #a32020; }
+  .err { padding: 12px 16px; font-size: 13px; color: #c02020; }
+  .divider { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
+  .toggle { font-size: 13px; color: #1a56c4; cursor: pointer; text-decoration: underline; margin-bottom: 1rem; display: inline-block; }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>IPTV Server Tester</h1>
+  <p class="sub">Sjekk om en IPTV-server er oppe</p>
+
+  <label>Server URL</label>
+  <input type="text" id="server" placeholder="http://candy8kcloud.cc" />
+  <p class="hint">Lim inn URL – port er valgfritt</p>
+
+  <button class="primary" id="pingBtn" onclick="ping()">Sjekk server</button>
+
+  <div id="pingResult" class="result">
+    <div class="result-header">
+      <div class="dot spin" id="pingDot"></div>
+      <h3 id="pingStatus">Sjekker...</h3>
+    </div>
+    <div id="pingDetails"></div>
+  </div>
+
+  <hr class="divider">
+
+  <span class="toggle" onclick="toggleFull()">&#9658; Full test med brukernavn og passord</span>
+
+  <div id="fullSection" style="display:none;">
+    <div class="row">
+      <div>
+        <label>Brukernavn</label>
+        <input type="text" id="username" placeholder="username" autocomplete="off" />
+      </div>
+      <div>
+        <label>Passord</label>
+        <input type="password" id="password" placeholder="password" />
+      </div>
+    </div>
+    <button class="primary" id="fullBtn" onclick="fullTest()" style="margin-top:12px;">Test innlogging</button>
+
+    <div id="fullResult" class="result">
+      <div class="result-header">
+        <div class="dot spin" id="fullDot"></div>
+        <h3 id="fullStatus">Sjekker...</h3>
+      </div>
+      <div id="fullDetails"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleFull() {
+  const s = document.getElementById('fullSection');
+  const t = document.querySelector('.toggle');
+  const open = s.style.display !== 'none';
+  s.style.display = open ? 'none' : 'block';
+  t.innerHTML = (open ? '&#9658;' : '&#9660;') + ' Full test med brukernavn og passord';
+}
+
+function sanitize(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function getServer() {
+  return document.getElementById('server').value.trim().replace(/\/$/, '');
+}
+
+async function ping() {
+  const server = getServer();
+  if (!server) { alert('Fyll inn server-URL.'); return; }
+
+  const btn = document.getElementById('pingBtn');
+  const res = document.getElementById('pingResult');
+  const dot = document.getElementById('pingDot');
+  const status = document.getElementById('pingStatus');
+  const details = document.getElementById('pingDetails');
+
+  btn.disabled = true;
+  res.style.display = 'block';
+  dot.className = 'dot spin';
+  status.textContent = 'Sjekker...';
+  details.innerHTML = '';
+
+  const start = Date.now();
+  try {
+    await fetch(server, { mode: 'no-cors', signal: AbortSignal.timeout(8000) });
+    const ms = Date.now() - start;
+    dot.className = 'dot ok';
+    status.textContent = 'Serveren er oppe';
+    details.innerHTML = `<table>
+      <tr><td>URL</td><td>${sanitize(server)}</td></tr>
+      <tr><td>Responstid</td><td>${ms} ms</td></tr>
+      <tr><td>Status</td><td><span class="badge ok">Online</span></td></tr>
+    </table>`;
+  } catch (e) {
+    dot.className = 'dot fail';
+    status.textContent = 'Ingen respons';
+    const msg = e.name === 'TimeoutError'
+      ? 'Tidsavbrudd etter 8 sekunder – serveren svarer ikke.'
+      : 'Serveren er utilgjengelig. Sjekk at URL er riktig.';
+    details.innerHTML = `<div class="err">${msg}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function fullTest() {
+  const server = getServer();
+  const username = document.getElementById('username').value.trim();
+  const password = document.getElementById('password').value.trim();
+  if (!server || !username || !password) { alert('Fyll inn alle felt.'); return; }
+
+  const btn = document.getElementById('fullBtn');
+  const res = document.getElementById('fullResult');
+  const dot = document.getElementById('fullDot');
+  const status = document.getElementById('fullStatus');
+  const details = document.getElementById('fullDetails');
+
+  btn.disabled = true;
+  res.style.display = 'block';
+  dot.className = 'dot spin';
+  status.textContent = 'Sjekker...';
+  details.innerHTML = '';
+
+  try {
+    const url = `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
+    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (!data?.user_info) throw new Error('Uventet svar fra server.');
+
+    const u = data.user_info;
+    const s = data.server_info || {};
+    const isActive = u.status === 'Active';
+    const expTs = parseInt(u.exp_date);
+    const expDate = expTs > 0 ? new Date(expTs * 1000).toLocaleDateString('nb-NO') : 'Utløper aldri';
+    const daysLeft = expTs > 0 ? Math.max(0, Math.round((expTs - Date.now() / 1000) / 86400)) : null;
+    const dl = daysLeft !== null ? ` (${daysLeft} dager igjen)` : '';
+    const maxConn = u.max_connections ?? '—';
+    const activeConn = u.active_cons ?? '0';
+
+    dot.className = 'dot ok';
+    status.textContent = 'Innlogging OK';
+    details.innerHTML = `<table>
+      <tr><td>Kontostatus</td><td><span class="badge ${isActive ? 'ok' : 'fail'}">${u.status || '—'}</span></td></tr>
+      <tr><td>Brukernavn</td><td>${u.username || username}</td></tr>
+      <tr><td>Utløper</td><td>${expDate}${dl}</td></tr>
+      <tr><td>Max tilkoblinger</td><td>${maxConn}</td></tr>
+      <tr><td>Aktive tilkoblinger</td><td>${activeConn}</td></tr>
+      <tr><td>Server tidssone</td><td>${s.timezone || '—'}</td></tr>
+    </table>`;
+  } catch (e) {
+    dot.className = 'dot fail';
+    status.textContent = 'Feil';
+    let msg = e.message;
+    if (e.name === 'TimeoutError') {
+      msg = 'Tidsavbrudd etter 10 sekunder – serveren svarer ikke.';
+    } else if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror')) {
+      msg = 'Serveren blokkerer direkte forespørsler (CORS). Lim inn denne URL-en i adressefeltet i stedet:<br><br><code style="font-size:11px;word-break:break-all;">' + getServer() + '/player_api.php?username=' + encodeURIComponent(document.getElementById('username').value.trim()) + '&password=' + encodeURIComponent(document.getElementById('password').value.trim()) + '</code>';
+    }
+    details.innerHTML = `<div class="err">${msg}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  const fullOpen = document.getElementById('fullSection').style.display !== 'none';
+  if (fullOpen && (document.activeElement.id === 'username' || document.activeElement.id === 'password')) {
+    fullTest();
+  } else {
+    ping();
+  }
+});
+</script>
+</body>
+</html>
