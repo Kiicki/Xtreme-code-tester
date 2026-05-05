@@ -123,6 +123,22 @@
 </div>
 
 <script>
+// Cloudflare Worker proxy URL — lim inn din egen worker-URL her etter deploy.
+// Hvis tom, prøver siden direkte (vil feile på HTTP-servere fra GitHub Pages).
+// Eksempel: 'https://iptv-tester-proxy.dittnavn.workers.dev'
+const PROXY = 'https://iptv-tester-proxy.kulasic-igor.workers.dev';
+
+function needsProxy(url) {
+  return location.protocol === 'https:' && /^http:\/\//i.test(url);
+}
+
+function proxify(url) {
+  if (PROXY && needsProxy(url)) {
+    return `${PROXY.replace(/\/$/, '')}/?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+
 function toggleFull() {
   const s = document.getElementById('fullSection');
   const t = document.querySelector('.toggle');
@@ -157,42 +173,48 @@ async function ping() {
   status.textContent = 'Sjekker...';
   details.innerHTML = '';
 
-  const isMixed = location.protocol === 'https:' && /^http:\/\//i.test(server);
-  const candidates = isMixed ? [server.replace(/^http:/i, 'https:'), server] : [server];
+  const isMixed = needsProxy(server);
+  const usingProxy = isMixed && !!PROXY;
 
-  let lastErr = null;
-  for (const url of candidates) {
-    const start = Date.now();
-    try {
-      await fetch(url, { mode: 'no-cors', signal: AbortSignal.timeout(8000) });
-      const ms = Date.now() - start;
-      dot.className = 'dot ok';
-      status.textContent = 'Serveren er oppe';
-      details.innerHTML = `<table>
-        <tr><td>URL</td><td>${sanitize(url)}</td></tr>
-        <tr><td>Responstid</td><td>${ms} ms</td></tr>
-        <tr><td>Status</td><td><span class="badge ok">Online</span></td></tr>
-      </table>`;
-      btn.disabled = false;
-      return;
-    } catch (e) {
-      lastErr = e;
+  if (isMixed && !PROXY) {
+    dot.className = 'dot fail';
+    status.textContent = 'Kan ikke teste herfra';
+    details.innerHTML = `<div class="err">Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b>. Nettleseren blokkerer slike forespørsler (mixed content).<br><br>Sett opp en Cloudflare Worker-proxy (se <code>worker.js</code>) og lim URL-en inn i <code>PROXY</code>-konstanten øverst i scriptet for å teste automatisk.<br><br>Eller <a href="${sanitize(server)}" target="_blank" rel="noopener">åpne ${sanitize(server)} i ny fane</a> for å teste manuelt.</div>`;
+    btn.disabled = false;
+    return;
+  }
+
+  const start = Date.now();
+  try {
+    const resp = await fetch(proxify(server), {
+      mode: usingProxy ? 'cors' : 'no-cors',
+      signal: AbortSignal.timeout(8000),
+    });
+    const ms = Date.now() - start;
+
+    if (usingProxy && resp.headers.get('X-Proxy-Status') === 'error') {
+      throw new Error('upstream-unreachable');
     }
-  }
 
-  dot.className = 'dot fail';
-  status.textContent = isMixed ? 'Kan ikke teste herfra' : 'Ingen respons';
-  let msg;
-  if (isMixed) {
-    msg = `Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b>. Nettleseren blokkerer slike forespørsler (mixed content), så vi kan ikke teste den automatisk.<br><br>
-      <a href="${sanitize(server)}" target="_blank" rel="noopener">Åpne ${sanitize(server)} i ny fane</a> for å teste manuelt, eller last ned HTML-filen og åpne den lokalt.`;
-  } else if (lastErr?.name === 'TimeoutError') {
-    msg = 'Tidsavbrudd etter 8 sekunder – serveren svarer ikke.';
-  } else {
-    msg = 'Serveren er utilgjengelig. Sjekk at URL er riktig.';
+    dot.className = 'dot ok';
+    status.textContent = 'Serveren er oppe';
+    const httpStatus = usingProxy ? `${resp.status} ${resp.statusText}` : 'Online';
+    details.innerHTML = `<table>
+      <tr><td>URL</td><td>${sanitize(server)}</td></tr>
+      <tr><td>Responstid</td><td>${ms} ms</td></tr>
+      <tr><td>HTTP-status</td><td><span class="badge ok">${sanitize(httpStatus)}</span></td></tr>
+      ${usingProxy ? '<tr><td>Via</td><td>Cloudflare proxy</td></tr>' : ''}
+    </table>`;
+  } catch (e) {
+    dot.className = 'dot fail';
+    status.textContent = 'Ingen respons';
+    const msg = e.name === 'TimeoutError'
+      ? 'Tidsavbrudd etter 8 sekunder – serveren svarer ikke.'
+      : 'Serveren er utilgjengelig. Sjekk at URL er riktig.';
+    details.innerHTML = `<div class="err">${msg}</div>`;
+  } finally {
+    btn.disabled = false;
   }
-  details.innerHTML = `<div class="err">${msg}</div>`;
-  btn.disabled = false;
 }
 
 async function fullTest() {
@@ -213,9 +235,19 @@ async function fullTest() {
   status.textContent = 'Sjekker...';
   details.innerHTML = '';
 
+  const isMixed = needsProxy(server);
+  if (isMixed && !PROXY) {
+    dot.className = 'dot fail';
+    status.textContent = 'Kan ikke teste herfra';
+    details.innerHTML = `<div class="err">Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b> – nettleseren blokkerer forespørselen (mixed content).<br><br>Sett opp en Cloudflare Worker-proxy (se <code>worker.js</code>) og lim URL-en inn i <code>PROXY</code>-konstanten for å teste automatisk.</div>`;
+    btn.disabled = false;
+    return;
+  }
+
   try {
     const url = `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    const resp = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const resp = await fetch(proxify(url), { signal: AbortSignal.timeout(15000) });
+    if (resp.headers.get('X-Proxy-Status') === 'error') throw new Error('Server utilgjengelig.');
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     const data = await resp.json();
     if (!data?.user_info) throw new Error('Uventet svar fra server.');
@@ -244,14 +276,11 @@ async function fullTest() {
     dot.className = 'dot fail';
     status.textContent = 'Feil';
     let msg = e.message;
-    const isMixed = location.protocol === 'https:' && /^http:\/\//i.test(server);
     const fullUrl = `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
     if (e.name === 'TimeoutError') {
-      msg = 'Tidsavbrudd etter 10 sekunder – serveren svarer ikke.';
-    } else if (isMixed) {
-      msg = `Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b> – nettleseren blokkerer forespørselen (mixed content).<br><br>Åpne denne URL-en direkte i adressefeltet:<br><br><a href="${sanitize(fullUrl)}" target="_blank" rel="noopener" style="font-size:11px;word-break:break-all;">${sanitize(fullUrl)}</a>`;
+      msg = 'Tidsavbrudd – serveren svarer ikke.';
     } else if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror')) {
-      msg = 'Serveren blokkerer direkte forespørsler (CORS). Lim inn denne URL-en i adressefeltet i stedet:<br><br><code style="font-size:11px;word-break:break-all;">' + sanitize(fullUrl) + '</code>';
+      msg = `Serveren blokkerer direkte forespørsler (CORS). Lim inn denne URL-en i adressefeltet i stedet:<br><br><a href="${sanitize(fullUrl)}" target="_blank" rel="noopener" style="font-size:11px;word-break:break-all;">${sanitize(fullUrl)}</a>`;
     }
     details.innerHTML = `<div class="err">${msg}</div>`;
   } finally {
