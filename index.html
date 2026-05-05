@@ -1,132 +1,534 @@
 <!DOCTYPE html>
-<html lang="nb">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>IPTV Server Tester</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="referrer" content="no-referrer">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; connect-src https: http:; img-src 'self' data:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'none'">
+<title>Pulse · Server health check</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; }
+  :root {
+    --bg: #0a0a0a;
+    --bg-elevated: #111111;
+    --bg-input: #0a0a0a;
+    --bg-hover: #161616;
+    --border: #1f1f1f;
+    --border-strong: #2a2a2a;
+    --text: #ededed;
+    --text-muted: #888;
+    --text-subtle: #555;
+    --accent: #fafafa;
+    --accent-fg: #0a0a0a;
+    --ok: #10b981;
+    --ok-soft: rgba(16, 185, 129, 0.14);
+    --fail: #ef4444;
+    --fail-soft: rgba(239, 68, 68, 0.14);
+    --pending: #525252;
+    --shadow: 0 0 0 1px var(--border), 0 8px 24px rgba(0,0,0,0.3);
+    --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Inter", sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --pad: clamp(0.875rem, 2.5vw, 1.25rem);
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root {
+      --bg: #fafafa;
+      --bg-elevated: #ffffff;
+      --bg-input: #fafafa;
+      --bg-hover: #f5f5f5;
+      --border: #e8e8e8;
+      --border-strong: #d4d4d4;
+      --text: #0a0a0a;
+      --text-muted: #737373;
+      --text-subtle: #a3a3a3;
+      --accent: #0a0a0a;
+      --accent-fg: #ffffff;
+      --ok-soft: rgba(16, 185, 129, 0.12);
+      --fail-soft: rgba(239, 68, 68, 0.12);
+      --shadow: 0 0 0 1px var(--border), 0 4px 12px rgba(0,0,0,0.04);
+    }
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { overscroll-behavior-y: none; }
+
   body {
-    font-family: system-ui, -apple-system, sans-serif;
-    background: #f4f4f2;
-    color: #1a1a18;
+    font-family: var(--font-sans);
+    background: var(--bg);
+    color: var(--text);
     margin: 0;
     min-height: 100vh;
+    min-height: 100dvh;
     display: flex;
     align-items: flex-start;
     justify-content: center;
-    padding: 2rem 1rem;
+    padding: clamp(1rem, 4vw, 4rem) clamp(0.75rem, 3vw, 2rem);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11', 'ss01';
+    -webkit-text-size-adjust: 100%;
   }
-  .card {
-    background: #fff;
-    border-radius: 14px;
-    border: 1px solid #e0dfd8;
-    padding: 2rem;
+
+  .app {
     width: 100%;
-    max-width: 520px;
+    max-width: 680px;
   }
-  h1 { font-size: 18px; font-weight: 600; margin: 0 0 0.2rem; }
-  .sub { font-size: 13px; color: #999; margin: 0 0 1.5rem; }
-  label { display: block; font-size: 13px; color: #666; margin-bottom: 5px; }
-  input[type=text], input[type=password] {
-    width: 100%; padding: 10px 12px; font-size: 15px;
-    border: 1px solid #ddd; border-radius: 8px;
-    background: #fafafa; color: #1a1a18;
-    outline: none; transition: border 0.15s;
-    margin-bottom: 6px;
+
+  .header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: clamp(1rem, 3vw, 1.75rem);
   }
-  input:focus { border-color: #1a56c4; background: #fff; }
-  .hint { font-size: 12px; color: #bbb; margin: 0 0 14px; }
+
+  .brand-mark {
+    width: clamp(32px, 8vw, 38px);
+    height: clamp(32px, 8vw, 38px);
+    border-radius: 9px;
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    display: grid;
+    place-items: center;
+    color: white;
+    flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+  }
+  .brand-mark svg {
+    width: 55%; height: 55%;
+  }
+
+  .header-text { min-width: 0; flex: 1; }
+  .header-text h1 {
+    font-size: clamp(15px, 3.5vw, 17px);
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.015em;
+  }
+  .header-text p {
+    font-size: clamp(12px, 3vw, 13px);
+    color: var(--text-muted);
+    margin: 1px 0 0;
+    letter-spacing: -0.005em;
+  }
+
+  .card {
+    background: var(--bg-elevated);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  .input-section { padding: var(--pad); border-bottom: 1px solid var(--border); }
+
+  .label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+    gap: 8px;
+  }
+
+  label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    letter-spacing: 0.005em;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: clamp(120px, 30vh, 160px);
+    padding: 12px 14px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    outline: none;
+    resize: vertical;
+    transition: border-color 0.15s;
+  }
+  textarea:focus { border-color: var(--border-strong); }
+  textarea::placeholder { color: var(--text-subtle); }
+
+  .input-meta {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-top: 9px;
+  }
+
+  .hint {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 0;
+  }
+  .hint kbd {
+    display: inline-block;
+    padding: 1px 5px;
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin: 0 1px;
+  }
+
+  .url-count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    padding: 2px 7px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    flex-shrink: 0;
+    transition: opacity 0.2s;
+  }
+  .url-count.hidden { opacity: 0; pointer-events: none; }
+
+  .actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 10px 14px;
+    min-height: 40px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: -0.005em;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  button svg { width: 14px; height: 14px; flex-shrink: 0; }
+
   button.primary {
-    width: 100%; padding: 11px; font-size: 14px; font-weight: 600;
-    background: #1a56c4; color: #fff;
-    border: none; border-radius: 8px; cursor: pointer;
+    flex: 1 1 auto;
+    min-width: 130px;
+    background: var(--accent);
+    color: var(--accent-fg);
   }
-  button.primary:hover { background: #1445a8; }
-  button.primary:disabled { background: #aac0e8; cursor: not-allowed; }
-  .result {
-    margin-top: 18px; border-radius: 10px;
-    border: 1px solid #e0dfd8; overflow: hidden;
+  button.primary:hover:not(:disabled) { opacity: 0.88; }
+  button.primary:active:not(:disabled) { transform: scale(0.98); }
+  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  button.secondary {
+    background: transparent;
+    color: var(--text-muted);
+    border-color: var(--border);
+  }
+  button.secondary:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+  }
+
+  button.icon-only {
+    padding: 8px;
+    min-height: 32px;
+    width: 32px;
+    background: transparent;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+  button.icon-only:hover {
+    color: var(--text);
+    border-color: var(--border-strong);
+    background: var(--bg-hover);
+  }
+  button.icon-only svg { width: 13px; height: 13px; }
+
+  .summary {
     display: none;
+    padding: 14px var(--pad);
+    border-bottom: 1px solid var(--border);
   }
-  .result-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 13px 16px; background: #fafafa;
-    border-bottom: 1px solid #e0dfd8;
+
+  .summary-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
   }
-  .dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; }
-  .dot.ok   { background: #4a9e2a; }
-  .dot.fail { background: #d93030; }
-  .dot.spin { background: #aaa; animation: p 1s infinite; }
-  @keyframes p { 0%,100%{opacity:1} 50%{opacity:0.2} }
-  .result-header h3 { margin: 0; font-size: 14px; font-weight: 600; }
-  table { width: 100%; border-collapse: collapse; }
-  td { padding: 8px 16px; font-size: 13px; }
-  tr:not(:last-child) td { border-bottom: 1px solid #f0efe8; }
-  td:first-child { color: #888; width: 40%; }
-  td:last-child { font-weight: 500; }
-  .badge { display: inline-block; padding: 2px 9px; border-radius: 6px; font-size: 12px; font-weight: 500; }
-  .badge.ok   { background: #eaf3de; color: #2f6e10; }
-  .badge.fail { background: #fce8e8; color: #a32020; }
-  .err { padding: 12px 16px; font-size: 13px; color: #c02020; }
-  .err a { color: #1a56c4; }
-  .err b { color: #1a1a18; }
-  .divider { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
-  .toggle { font-size: 13px; color: #1a56c4; cursor: pointer; text-decoration: underline; margin-bottom: 1rem; display: inline-block; }
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+  .summary-stats {
+    display: flex;
+    align-items: center;
+    gap: clamp(12px, 4vw, 20px);
+    flex-wrap: wrap;
+    min-width: 0;
+  }
+
+  .stat {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .stat .num {
+    font-family: var(--font-mono);
+    font-size: clamp(15px, 4.5vw, 18px);
+    font-weight: 600;
+    color: var(--text);
+    letter-spacing: -0.02em;
+    text-transform: none;
+  }
+
+  .stat.ok .num { color: var(--ok); }
+  .stat.fail .num { color: var(--fail); }
+
+  .progress {
+    width: 100%;
+    height: 3px;
+    background: var(--border);
+    border-radius: 999px;
+    overflow: hidden;
+    display: flex;
+  }
+  .progress-ok { background: var(--ok); transition: width 0.25s ease; }
+  .progress-fail { background: var(--fail); transition: width 0.25s ease; }
+
+  .results { display: none; }
+
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px var(--pad);
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .row:last-child { border-bottom: none; }
+  .row:hover { background: var(--bg-hover); }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--pending);
+    transition: all 0.2s;
+  }
+  .dot.ok { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
+  .dot.fail { background: var(--fail); box-shadow: 0 0 0 4px var(--fail-soft); }
+  .dot.spin { animation: pulse 1.4s ease-in-out infinite; }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 0.35; }
+    50% { opacity: 1; }
+  }
+
+  .row-url {
+    flex: 1;
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    letter-spacing: -0.01em;
+  }
+
+  .row-meta {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    height: 20px;
+    padding: 0 7px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    letter-spacing: 0.02em;
+    background: var(--border);
+    color: var(--text-muted);
+  }
+  .tag.ok { color: var(--ok); background: var(--ok-soft); }
+  .tag.fail { color: var(--fail); background: var(--fail-soft); }
+
+  footer {
+    margin-top: 1.25rem;
+    text-align: center;
+    font-size: 11.5px;
+    color: var(--text-subtle);
+    letter-spacing: 0.01em;
+  }
+
+  .toast {
+    position: fixed;
+    bottom: 1.5rem;
+    left: 50%;
+    transform: translateX(-50%) translateY(20px);
+    padding: 10px 16px;
+    background: var(--text);
+    color: var(--bg);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 500;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    z-index: 100;
+    max-width: calc(100vw - 2rem);
+  }
+  .toast.show {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  /* Tablet */
+  @media (max-width: 768px) {
+    .header { gap: 10px; }
+  }
+
+  /* Phone */
+  @media (max-width: 480px) {
+    .row { gap: 10px; }
+    .row-url { font-size: 12.5px; }
+    .row-meta { font-size: 11px; gap: 6px; }
+    .tag { height: 18px; padding: 0 6px; font-size: 10.5px; }
+    button.primary { min-width: 100px; }
+    .actions { gap: 6px; }
+  }
+
+  /* Ultra-small (iPhone SE 1st gen, foldables in cover) */
+  @media (max-width: 360px) {
+    .row {
+      flex-wrap: wrap;
+      padding: 10px 12px;
+    }
+    .row-url {
+      flex-basis: calc(100% - 20px);
+      order: 1;
+      font-size: 12px;
+    }
+    .row-meta {
+      flex-basis: 100%;
+      padding-left: 20px;
+      margin-top: 4px;
+      order: 2;
+    }
+    .stat { font-size: 10px; }
+    button { padding: 9px 11px; font-size: 12.5px; }
+  }
+
+  /* Large desktops */
+  @media (min-width: 1200px) {
+    .app { max-width: 720px; }
+  }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>IPTV Server Tester</h1>
-  <p class="sub">Sjekk om en IPTV-server er oppe</p>
-
-  <label>Server URL</label>
-  <input type="text" id="server" placeholder="http://candy8kcloud.cc" />
-  <p class="hint">Lim inn URL – port er valgfritt</p>
-
-  <button class="primary" id="pingBtn" onclick="ping()">Sjekk server</button>
-
-  <div id="pingResult" class="result">
-    <div class="result-header">
-      <div class="dot spin" id="pingDot"></div>
-      <h3 id="pingStatus">Sjekker...</h3>
+<div class="app">
+  <header class="header">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+      </svg>
     </div>
-    <div id="pingDetails"></div>
+    <div class="header-text">
+      <h1>Pulse</h1>
+      <p>Server health check · multiple URLs in parallel</p>
+    </div>
+  </header>
+
+  <div class="card">
+    <div class="input-section">
+      <div class="label-row">
+        <label for="servers">Server URLs</label>
+        <button class="icon-only" onclick="pasteFromClipboard()" title="Paste from clipboard" aria-label="Paste">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+          </svg>
+        </button>
+      </div>
+      <textarea id="servers" placeholder="http://server-1.example.com&#10;http://server-2.example.com&#10;http://server-3.example.com" spellcheck="false"></textarea>
+      <div class="input-meta">
+        <p class="hint">One URL per line · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to run</p>
+        <span class="url-count hidden" id="urlCount">0 URLs</span>
+      </div>
+      <div class="actions">
+        <button class="primary" id="testBtn" onclick="testAll()">Check all</button>
+        <button class="secondary" onclick="pasteFromClipboard()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+            <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+          </svg>
+          Paste
+        </button>
+        <button class="secondary" onclick="clearAll()">Clear</button>
+      </div>
+    </div>
+
+    <div id="summary" class="summary">
+      <div class="summary-row">
+        <div class="summary-stats">
+          <div class="stat ok"><span class="num" id="okCount">0</span><span>up</span></div>
+          <div class="stat fail"><span class="num" id="failCount">0</span><span>down</span></div>
+          <div class="stat"><span class="num" id="totalCount">0/0</span><span>done</span></div>
+        </div>
+        <button class="icon-only" onclick="copyResults()" title="Copy results" aria-label="Copy results">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+          </svg>
+        </button>
+      </div>
+      <div class="progress">
+        <div class="progress-ok" id="progressOk" style="width:0%"></div>
+        <div class="progress-fail" id="progressFail" style="width:0%"></div>
+      </div>
+    </div>
+
+    <div id="results" class="results"></div>
   </div>
 
-  <hr class="divider">
-
-  <span class="toggle" onclick="toggleFull()">&#9658; Full test med brukernavn og passord</span>
-
-  <div id="fullSection" style="display:none;">
-    <div class="row">
-      <div>
-        <label>Brukernavn</label>
-        <input type="text" id="username" placeholder="username" autocomplete="off" />
-      </div>
-      <div>
-        <label>Passord</label>
-        <input type="password" id="password" placeholder="password" />
-      </div>
-    </div>
-    <button class="primary" id="fullBtn" onclick="fullTest()" style="margin-top:12px;">Test innlogging</button>
-
-    <div id="fullResult" class="result">
-      <div class="result-header">
-        <div class="dot spin" id="fullDot"></div>
-        <h3 id="fullStatus">Sjekker...</h3>
-      </div>
-      <div id="fullDetails"></div>
-    </div>
-  </div>
+  <footer>via Cloudflare Workers proxy</footer>
 </div>
 
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
 <script>
-// Cloudflare Worker proxy URL — lim inn din egen worker-URL her etter deploy.
-// Hvis tom, prøver siden direkte (vil feile på HTTP-servere fra GitHub Pages).
-// Eksempel: 'https://iptv-tester-proxy.dittnavn.workers.dev'
 const PROXY = 'https://iptv-tester-proxy.kulasic-igor.workers.dev';
+const STORAGE_KEY = 'iptv-tester:input';
+
+let testSession = 0;
+let toastTimer = null;
 
 function needsProxy(url) {
   return location.protocol === 'https:' && /^http:\/\//i.test(url);
@@ -139,164 +541,209 @@ function proxify(url) {
   return url;
 }
 
-function toggleFull() {
-  const s = document.getElementById('fullSection');
-  const t = document.querySelector('.toggle');
-  const open = s.style.display !== 'none';
-  s.style.display = open ? 'none' : 'block';
-  t.innerHTML = (open ? '&#9658;' : '&#9660;') + ' Full test med brukernavn og passord';
+function extractUrls(text) {
+  const matches = text.match(/https?:\/\/[^\s,;<>"']+/gi) || [];
+  const cleaned = matches
+    .map(u => u.replace(/[).,;:]+$/, '').replace(/\/$/, ''))
+    .filter(Boolean);
+  return [...new Set(cleaned)];
 }
 
-function sanitize(str) {
-  const d = document.createElement('div');
-  d.textContent = str;
-  return d.innerHTML;
+function showToast(message) {
+  const toast = document.getElementById('toast');
+  toast.textContent = message;
+  toast.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toast.classList.remove('show'), 1800);
 }
 
-function getServer() {
-  return document.getElementById('server').value.trim().replace(/\/$/, '');
+function updateUrlCount() {
+  const count = extractUrls(document.getElementById('servers').value).length;
+  const el = document.getElementById('urlCount');
+  el.textContent = count === 1 ? '1 URL' : `${count} URLs`;
+  el.classList.toggle('hidden', count === 0);
 }
 
-async function ping() {
-  const server = getServer();
-  if (!server) { alert('Fyll inn server-URL.'); return; }
-
-  const btn = document.getElementById('pingBtn');
-  const res = document.getElementById('pingResult');
-  const dot = document.getElementById('pingDot');
-  const status = document.getElementById('pingStatus');
-  const details = document.getElementById('pingDetails');
-
-  btn.disabled = true;
-  res.style.display = 'block';
-  dot.className = 'dot spin';
-  status.textContent = 'Sjekker...';
-  details.innerHTML = '';
-
-  const isMixed = needsProxy(server);
-  const usingProxy = isMixed && !!PROXY;
-
-  if (isMixed && !PROXY) {
-    dot.className = 'dot fail';
-    status.textContent = 'Kan ikke teste herfra';
-    details.innerHTML = `<div class="err">Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b>. Nettleseren blokkerer slike forespørsler (mixed content).<br><br>Sett opp en Cloudflare Worker-proxy (se <code>worker.js</code>) og lim URL-en inn i <code>PROXY</code>-konstanten øverst i scriptet for å teste automatisk.<br><br>Eller <a href="${sanitize(server)}" target="_blank" rel="noopener">åpne ${sanitize(server)} i ny fane</a> for å teste manuelt.</div>`;
-    btn.disabled = false;
-    return;
+async function pasteFromClipboard() {
+  try {
+    const text = await navigator.clipboard.readText();
+    if (!text) {
+      showToast('Clipboard is empty');
+      return;
+    }
+    const ta = document.getElementById('servers');
+    ta.value = text;
+    ta.dispatchEvent(new Event('input'));
+    showToast('Pasted from clipboard');
+  } catch (e) {
+    document.getElementById('servers').focus();
+    showToast('Press Ctrl+V to paste');
   }
+}
 
+async function copyResults() {
+  const rows = document.querySelectorAll('#results .row');
+  if (rows.length === 0) return;
+  const lines = [...rows].map(row => {
+    const url = row.querySelector('.row-url').textContent.trim();
+    const time = row.querySelector('.time').textContent.trim();
+    const tag = row.querySelector('.tag').textContent.trim();
+    return `${tag.padEnd(8)}  ${time.padEnd(8)}  ${url}`;
+  });
+  try {
+    await navigator.clipboard.writeText(lines.join('\n'));
+    showToast(`Copied ${rows.length} results`);
+  } catch (e) {
+    showToast('Copy failed');
+  }
+}
+
+async function testOne(url) {
+  const usingProxy = needsProxy(url);
   const start = Date.now();
   try {
-    const resp = await fetch(proxify(server), {
+    const resp = await fetch(proxify(url), {
       mode: usingProxy ? 'cors' : 'no-cors',
       signal: AbortSignal.timeout(8000),
     });
     const ms = Date.now() - start;
-
     if (usingProxy && resp.headers.get('X-Proxy-Status') === 'error') {
-      throw new Error('upstream-unreachable');
+      return { ok: false, ms, kind: 'down' };
     }
-
-    dot.className = 'dot ok';
-    status.textContent = 'Serveren er oppe';
-    const httpStatus = usingProxy ? `${resp.status} ${resp.statusText}` : 'Online';
-    details.innerHTML = `<table>
-      <tr><td>URL</td><td>${sanitize(server)}</td></tr>
-      <tr><td>Responstid</td><td>${ms} ms</td></tr>
-      <tr><td>HTTP-status</td><td><span class="badge ok">${sanitize(httpStatus)}</span></td></tr>
-      ${usingProxy ? '<tr><td>Via</td><td>Cloudflare proxy</td></tr>' : ''}
-    </table>`;
+    return { ok: true, ms, httpStatus: usingProxy ? resp.status : null };
   } catch (e) {
-    dot.className = 'dot fail';
-    status.textContent = 'Ingen respons';
-    const msg = e.name === 'TimeoutError'
-      ? 'Tidsavbrudd etter 8 sekunder – serveren svarer ikke.'
-      : 'Serveren er utilgjengelig. Sjekk at URL er riktig.';
-    details.innerHTML = `<div class="err">${msg}</div>`;
-  } finally {
-    btn.disabled = false;
+    const ms = Date.now() - start;
+    return { ok: false, ms, kind: e.name === 'TimeoutError' ? 'timeout' : 'down' };
   }
 }
 
-async function fullTest() {
-  const server = getServer();
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value.trim();
-  if (!server || !username || !password) { alert('Fyll inn alle felt.'); return; }
+function buildRow(url) {
+  const row = document.createElement('div');
+  row.className = 'row';
 
-  const btn = document.getElementById('fullBtn');
-  const res = document.getElementById('fullResult');
-  const dot = document.getElementById('fullDot');
-  const status = document.getElementById('fullStatus');
-  const details = document.getElementById('fullDetails');
-
-  btn.disabled = true;
-  res.style.display = 'block';
+  const dot = document.createElement('div');
   dot.className = 'dot spin';
-  status.textContent = 'Sjekker...';
-  details.innerHTML = '';
 
-  const isMixed = needsProxy(server);
-  if (isMixed && !PROXY) {
+  const urlEl = document.createElement('div');
+  urlEl.className = 'row-url';
+  urlEl.textContent = url;
+  urlEl.title = url;
+
+  const meta = document.createElement('div');
+  meta.className = 'row-meta';
+
+  const time = document.createElement('span');
+  time.className = 'time';
+  time.textContent = '—';
+
+  const tag = document.createElement('span');
+  tag.className = 'tag';
+  tag.textContent = '···';
+
+  meta.append(time, tag);
+  row.append(dot, urlEl, meta);
+  return row;
+}
+
+function updateRow(row, result) {
+  const dot = row.querySelector('.dot');
+  const time = row.querySelector('.time');
+  const tag = row.querySelector('.tag');
+  if (result.ok) {
+    dot.className = 'dot ok';
+    time.textContent = `${result.ms}ms`;
+    tag.className = 'tag ok';
+    tag.textContent = result.httpStatus ? String(result.httpStatus) : 'OK';
+  } else {
     dot.className = 'dot fail';
-    status.textContent = 'Kan ikke teste herfra';
-    details.innerHTML = `<div class="err">Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b> – nettleseren blokkerer forespørselen (mixed content).<br><br>Sett opp en Cloudflare Worker-proxy (se <code>worker.js</code>) og lim URL-en inn i <code>PROXY</code>-konstanten for å teste automatisk.</div>`;
-    btn.disabled = false;
+    time.textContent = result.ms ? `${result.ms}ms` : '';
+    tag.className = 'tag fail';
+    tag.textContent = result.kind === 'timeout' ? 'TIMEOUT' : 'DOWN';
+  }
+}
+
+function setSummary(ok, fail, total) {
+  document.getElementById('okCount').textContent = ok;
+  document.getElementById('failCount').textContent = fail;
+  document.getElementById('totalCount').textContent = `${ok + fail}/${total}`;
+  document.getElementById('progressOk').style.width = `${(ok / total) * 100}%`;
+  document.getElementById('progressFail').style.width = `${(fail / total) * 100}%`;
+}
+
+async function testAll() {
+  const text = document.getElementById('servers').value;
+  const urls = extractUrls(text);
+  if (urls.length === 0) {
+    showToast('Paste at least one URL');
     return;
   }
 
-  try {
-    const url = `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    const resp = await fetch(proxify(url), { signal: AbortSignal.timeout(15000) });
-    if (resp.headers.get('X-Proxy-Status') === 'error') throw new Error('Server utilgjengelig.');
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const data = await resp.json();
-    if (!data?.user_info) throw new Error('Uventet svar fra server.');
+  const session = ++testSession;
+  const btn = document.getElementById('testBtn');
+  const results = document.getElementById('results');
+  const summary = document.getElementById('summary');
 
-    const u = data.user_info;
-    const s = data.server_info || {};
-    const isActive = u.status === 'Active';
-    const expTs = parseInt(u.exp_date);
-    const expDate = expTs > 0 ? new Date(expTs * 1000).toLocaleDateString('nb-NO') : 'Utløper aldri';
-    const daysLeft = expTs > 0 ? Math.max(0, Math.round((expTs - Date.now() / 1000) / 86400)) : null;
-    const dl = daysLeft !== null ? ` (${daysLeft} dager igjen)` : '';
-    const maxConn = u.max_connections ?? '—';
-    const activeConn = u.active_cons ?? '0';
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  results.innerHTML = '';
+  results.style.display = 'block';
+  summary.style.display = 'block';
+  setSummary(0, 0, urls.length);
 
-    dot.className = 'dot ok';
-    status.textContent = 'Innlogging OK';
-    details.innerHTML = `<table>
-      <tr><td>Kontostatus</td><td><span class="badge ${isActive ? 'ok' : 'fail'}">${u.status || '—'}</span></td></tr>
-      <tr><td>Brukernavn</td><td>${u.username || username}</td></tr>
-      <tr><td>Utløper</td><td>${expDate}${dl}</td></tr>
-      <tr><td>Max tilkoblinger</td><td>${maxConn}</td></tr>
-      <tr><td>Aktive tilkoblinger</td><td>${activeConn}</td></tr>
-      <tr><td>Server tidssone</td><td>${s.timezone || '—'}</td></tr>
-    </table>`;
-  } catch (e) {
-    dot.className = 'dot fail';
-    status.textContent = 'Feil';
-    let msg = e.message;
-    const fullUrl = `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
-    if (e.name === 'TimeoutError') {
-      msg = 'Tidsavbrudd – serveren svarer ikke.';
-    } else if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror')) {
-      msg = `Serveren blokkerer direkte forespørsler (CORS). Lim inn denne URL-en i adressefeltet i stedet:<br><br><a href="${sanitize(fullUrl)}" target="_blank" rel="noopener" style="font-size:11px;word-break:break-all;">${sanitize(fullUrl)}</a>`;
-    }
-    details.innerHTML = `<div class="err">${msg}</div>`;
-  } finally {
-    btn.disabled = false;
-  }
+  const rows = urls.map(url => {
+    const el = buildRow(url);
+    results.appendChild(el);
+    return { url, el };
+  });
+
+  let okCount = 0, failCount = 0;
+  await Promise.all(rows.map(async ({ url, el }) => {
+    const result = await testOne(url);
+    if (session !== testSession) return;
+    updateRow(el, result);
+    if (result.ok) okCount++; else failCount++;
+    setSummary(okCount, failCount, urls.length);
+  }));
+
+  if (session !== testSession) return;
+  btn.disabled = false;
+  btn.textContent = 'Check all';
 }
 
+function clearAll() {
+  testSession++;
+  const btn = document.getElementById('testBtn');
+  btn.disabled = false;
+  btn.textContent = 'Check all';
+  document.getElementById('servers').value = '';
+  document.getElementById('servers').dispatchEvent(new Event('input'));
+  const results = document.getElementById('results');
+  const summary = document.getElementById('summary');
+  results.innerHTML = '';
+  results.style.display = 'none';
+  summary.style.display = 'none';
+  document.getElementById('servers').focus();
+}
+
+document.getElementById('servers').addEventListener('input', () => {
+  try { localStorage.setItem(STORAGE_KEY, document.getElementById('servers').value); } catch {}
+  updateUrlCount();
+});
+
 document.addEventListener('keydown', e => {
-  if (e.key !== 'Enter') return;
-  const fullOpen = document.getElementById('fullSection').style.display !== 'none';
-  if (fullOpen && (document.activeElement.id === 'username' || document.activeElement.id === 'password')) {
-    fullTest();
-  } else {
-    ping();
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    testAll();
   }
 });
+
+(function init() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) document.getElementById('servers').value = saved;
+  } catch {}
+  updateUrlCount();
+})();
 </script>
 </body>
 </html>
