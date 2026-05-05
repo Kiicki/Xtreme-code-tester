@@ -619,6 +619,11 @@ async function testOne(url) {
     if (usingProxy && resp.headers.get('X-Proxy-Status') === 'error') {
       return { ok: false, ms, kind: 'down' };
     }
+    // 5xx means the server itself is having problems (incl. Cloudflare 5xx
+    // edge codes like 521/522/523/524/530 indicating origin unreachable).
+    if (usingProxy && resp.status >= 500) {
+      return { ok: false, ms, httpStatus: resp.status, kind: 'down' };
+    }
     return { ok: true, ms, httpStatus: usingProxy ? resp.status : null };
   } catch (e) {
     const ms = Date.now() - start;
@@ -667,7 +672,9 @@ function updateRow(row, result) {
     dot.className = 'dot fail';
     time.textContent = result.ms ? `${result.ms}ms` : '';
     tag.className = 'tag fail';
-    tag.textContent = result.kind === 'timeout' ? 'TIMEOUT' : 'DOWN';
+    if (result.kind === 'timeout') tag.textContent = 'TIMEOUT';
+    else if (result.httpStatus) tag.textContent = String(result.httpStatus);
+    else tag.textContent = 'DOWN';
   }
 }
 
