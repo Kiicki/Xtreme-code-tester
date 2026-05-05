@@ -388,6 +388,39 @@
   .tag.ok { color: var(--ok); background: var(--ok-soft); }
   .tag.fail { color: var(--fail); background: var(--fail-soft); }
 
+  .row-copy {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    min-height: 0;
+    padding: 0;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 5px;
+    color: var(--text-subtle);
+    cursor: pointer;
+    opacity: 0.45;
+    display: grid;
+    place-items: center;
+    transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s, transform 0.1s;
+  }
+  .row:hover .row-copy { opacity: 1; }
+  .row-copy:hover, .row-copy:focus-visible {
+    color: var(--text);
+    border-color: var(--border);
+    background: var(--bg);
+    opacity: 1;
+    outline: none;
+  }
+  .row-copy:active { transform: scale(0.92); }
+  .row-copy.copied {
+    color: var(--ok);
+    border-color: var(--ok-soft);
+    background: var(--ok-soft);
+    opacity: 1;
+  }
+  .row-copy svg { width: 12px; height: 12px; }
+
   footer {
     margin-top: 1.25rem;
     text-align: center;
@@ -432,6 +465,8 @@
     .tag { height: 18px; padding: 0 6px; font-size: 10.5px; }
     button.primary { min-width: 100px; }
     .actions { gap: 6px; }
+    .row-copy { width: 24px; height: 24px; opacity: 0.7; }
+    .row-copy svg { width: 11px; height: 11px; }
   }
 
   /* Ultra-small (iPhone SE 1st gen, foldables in cover) */
@@ -441,15 +476,18 @@
       padding: 10px 12px;
     }
     .row-url {
-      flex-basis: calc(100% - 20px);
+      flex-basis: calc(100% - 50px);
       order: 1;
       font-size: 12px;
+    }
+    .row-copy {
+      order: 2;
     }
     .row-meta {
       flex-basis: 100%;
       padding-left: 20px;
       margin-top: 4px;
-      order: 2;
+      order: 3;
     }
     .stat { font-size: 10px; }
     button { padding: 9px 11px; font-size: 12.5px; }
@@ -655,8 +693,27 @@ function buildRow(url) {
   tag.textContent = '···';
 
   meta.append(time, tag);
-  row.append(dot, urlEl, meta);
+
+  const copyBtn = document.createElement('button');
+  copyBtn.className = 'row-copy';
+  copyBtn.title = 'Copy URL';
+  copyBtn.setAttribute('aria-label', 'Copy URL');
+  copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+  copyBtn.addEventListener('click', () => copyRowUrl(url, copyBtn));
+
+  row.append(dot, urlEl, meta, copyBtn);
   return row;
+}
+
+async function copyRowUrl(url, btn) {
+  try {
+    await navigator.clipboard.writeText(url);
+    btn.classList.add('copied');
+    showToast('URL copied');
+    setTimeout(() => btn.classList.remove('copied'), 1200);
+  } catch {
+    showToast('Copy failed');
+  }
 }
 
 function updateRow(row, result) {
