@@ -724,15 +724,14 @@ function updateRow(row, result) {
     dot.className = 'dot ok';
     time.textContent = `${result.ms}ms`;
     tag.className = 'tag ok';
-    tag.textContent = result.httpStatus ? String(result.httpStatus) : 'OK';
+    tag.textContent = 'UP';
   } else {
     dot.className = 'dot fail';
     time.textContent = result.ms ? `${result.ms}ms` : '';
     tag.className = 'tag fail';
-    if (result.kind === 'timeout') tag.textContent = 'TIMEOUT';
-    else if (result.httpStatus) tag.textContent = String(result.httpStatus);
-    else tag.textContent = 'DOWN';
+    tag.textContent = result.kind === 'timeout' ? 'TIMEOUT' : 'DOWN';
   }
+  tag.title = result.httpStatus ? `HTTP ${result.httpStatus}` : '';
 }
 
 function setSummary(ok, fail, total) {
