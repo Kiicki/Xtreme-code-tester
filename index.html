@@ -686,6 +686,30 @@ function setSummary(ok, fail, total) {
   document.getElementById('progressFail').style.width = `${(fail / total) * 100}%`;
 }
 
+function sortAndAnimate(container, entries) {
+  // Sort: UP before DOWN, then by response time ascending.
+  entries.sort((a, b) => {
+    if (!a.result) return 1;
+    if (!b.result) return -1;
+    if (a.result.ok !== b.result.ok) return a.result.ok ? -1 : 1;
+    return (a.result.ms ?? Infinity) - (b.result.ms ?? Infinity);
+  });
+
+  // FLIP animation: capture old positions, reorder DOM, animate from old to new.
+  const oldTops = new Map(entries.map(({ el }) => [el, el.getBoundingClientRect().top]));
+  entries.forEach(({ el }) => container.appendChild(el));
+  entries.forEach(({ el }) => {
+    const oldTop = oldTops.get(el);
+    const newTop = el.getBoundingClientRect().top;
+    const dy = oldTop - newTop;
+    if (Math.abs(dy) < 1) return;
+    el.animate(
+      [{ transform: `translateY(${dy}px)` }, { transform: 'translateY(0)' }],
+      { duration: 350, easing: 'cubic-bezier(0.2, 0, 0, 1)' }
+    );
+  });
+}
+
 async function testAll() {
   const text = document.getElementById('servers').value;
   const urls = extractUrls(text);
@@ -709,19 +733,21 @@ async function testAll() {
   const rows = urls.map(url => {
     const el = buildRow(url);
     results.appendChild(el);
-    return { url, el };
+    return { url, el, result: null };
   });
 
   let okCount = 0, failCount = 0;
-  await Promise.all(rows.map(async ({ url, el }) => {
-    const result = await testOne(url);
+  await Promise.all(rows.map(async (entry) => {
+    const result = await testOne(entry.url);
     if (session !== testSession) return;
-    updateRow(el, result);
+    entry.result = result;
+    updateRow(entry.el, result);
     if (result.ok) okCount++; else failCount++;
     setSummary(okCount, failCount, urls.length);
   }));
 
   if (session !== testSession) return;
+  sortAndAnimate(results, rows);
   btn.disabled = false;
   btn.textContent = 'Check all';
 }
