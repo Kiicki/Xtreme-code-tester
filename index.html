@@ -69,6 +69,8 @@
   .badge.ok   { background: #eaf3de; color: #2f6e10; }
   .badge.fail { background: #fce8e8; color: #a32020; }
   .err { padding: 12px 16px; font-size: 13px; color: #c02020; }
+  .err a { color: #1a56c4; }
+  .err b { color: #1a1a18; }
   .divider { border: none; border-top: 1px solid #eee; margin: 1.5rem 0; }
   .toggle { font-size: 13px; color: #1a56c4; cursor: pointer; text-decoration: underline; margin-bottom: 1rem; display: inline-block; }
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
@@ -155,27 +157,42 @@ async function ping() {
   status.textContent = 'Sjekker...';
   details.innerHTML = '';
 
-  const start = Date.now();
-  try {
-    await fetch(server, { mode: 'no-cors', signal: AbortSignal.timeout(8000) });
-    const ms = Date.now() - start;
-    dot.className = 'dot ok';
-    status.textContent = 'Serveren er oppe';
-    details.innerHTML = `<table>
-      <tr><td>URL</td><td>${sanitize(server)}</td></tr>
-      <tr><td>Responstid</td><td>${ms} ms</td></tr>
-      <tr><td>Status</td><td><span class="badge ok">Online</span></td></tr>
-    </table>`;
-  } catch (e) {
-    dot.className = 'dot fail';
-    status.textContent = 'Ingen respons';
-    const msg = e.name === 'TimeoutError'
-      ? 'Tidsavbrudd etter 8 sekunder – serveren svarer ikke.'
-      : 'Serveren er utilgjengelig. Sjekk at URL er riktig.';
-    details.innerHTML = `<div class="err">${msg}</div>`;
-  } finally {
-    btn.disabled = false;
+  const isMixed = location.protocol === 'https:' && /^http:\/\//i.test(server);
+  const candidates = isMixed ? [server.replace(/^http:/i, 'https:'), server] : [server];
+
+  let lastErr = null;
+  for (const url of candidates) {
+    const start = Date.now();
+    try {
+      await fetch(url, { mode: 'no-cors', signal: AbortSignal.timeout(8000) });
+      const ms = Date.now() - start;
+      dot.className = 'dot ok';
+      status.textContent = 'Serveren er oppe';
+      details.innerHTML = `<table>
+        <tr><td>URL</td><td>${sanitize(url)}</td></tr>
+        <tr><td>Responstid</td><td>${ms} ms</td></tr>
+        <tr><td>Status</td><td><span class="badge ok">Online</span></td></tr>
+      </table>`;
+      btn.disabled = false;
+      return;
+    } catch (e) {
+      lastErr = e;
+    }
   }
+
+  dot.className = 'dot fail';
+  status.textContent = isMixed ? 'Kan ikke teste herfra' : 'Ingen respons';
+  let msg;
+  if (isMixed) {
+    msg = `Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b>. Nettleseren blokkerer slike forespørsler (mixed content), så vi kan ikke teste den automatisk.<br><br>
+      <a href="${sanitize(server)}" target="_blank" rel="noopener">Åpne ${sanitize(server)} i ny fane</a> for å teste manuelt, eller last ned HTML-filen og åpne den lokalt.`;
+  } else if (lastErr?.name === 'TimeoutError') {
+    msg = 'Tidsavbrudd etter 8 sekunder – serveren svarer ikke.';
+  } else {
+    msg = 'Serveren er utilgjengelig. Sjekk at URL er riktig.';
+  }
+  details.innerHTML = `<div class="err">${msg}</div>`;
+  btn.disabled = false;
 }
 
 async function fullTest() {
@@ -227,10 +244,14 @@ async function fullTest() {
     dot.className = 'dot fail';
     status.textContent = 'Feil';
     let msg = e.message;
+    const isMixed = location.protocol === 'https:' && /^http:\/\//i.test(server);
+    const fullUrl = `${server}/player_api.php?username=${encodeURIComponent(username)}&password=${encodeURIComponent(password)}`;
     if (e.name === 'TimeoutError') {
       msg = 'Tidsavbrudd etter 10 sekunder – serveren svarer ikke.';
+    } else if (isMixed) {
+      msg = `Denne siden kjører på <b>HTTPS</b>, men serveren bruker <b>HTTP</b> – nettleseren blokkerer forespørselen (mixed content).<br><br>Åpne denne URL-en direkte i adressefeltet:<br><br><a href="${sanitize(fullUrl)}" target="_blank" rel="noopener" style="font-size:11px;word-break:break-all;">${sanitize(fullUrl)}</a>`;
     } else if (msg.toLowerCase().includes('failed to fetch') || msg.toLowerCase().includes('networkerror')) {
-      msg = 'Serveren blokkerer direkte forespørsler (CORS). Lim inn denne URL-en i adressefeltet i stedet:<br><br><code style="font-size:11px;word-break:break-all;">' + getServer() + '/player_api.php?username=' + encodeURIComponent(document.getElementById('username').value.trim()) + '&password=' + encodeURIComponent(document.getElementById('password').value.trim()) + '</code>';
+      msg = 'Serveren blokkerer direkte forespørsler (CORS). Lim inn denne URL-en i adressefeltet i stedet:<br><br><code style="font-size:11px;word-break:break-all;">' + sanitize(fullUrl) + '</code>';
     }
     details.innerHTML = `<div class="err">${msg}</div>`;
   } finally {
