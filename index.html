@@ -596,7 +596,7 @@
     <div id="summary" class="summary">
       <div class="summary-row">
         <div class="summary-stats">
-          <div class="stat ok"><span class="num" id="okCount">0</span><span>up</span></div>
+          <div class="stat ok"><span class="num" id="okCount">0</span><span id="okLabel">up</span></div>
           <div class="stat auth"><span class="num" id="authCount">0</span><span>auth</span></div>
           <div class="stat fail"><span class="num" id="failCount">0</span><span>down</span></div>
           <div class="stat"><span class="num" id="totalCount">0/0</span><span>done</span></div>
@@ -618,13 +618,13 @@
     <div id="results" class="results"></div>
   </div>
 
-  <footer>via Cloudflare Workers proxy</footer>
+  <footer id="runtimeInfo">via Cloudflare Workers proxy · results can differ from local IPTV apps</footer>
 </div>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
 <script>
-const PROXY = 'https://iptv-tester-proxy.kulasic-igor.workers.dev';
+const CLOUDFLARE_PROXY = 'https://iptv-tester-proxy.kulasic-igor.workers.dev';
 const STORAGE_KEY = 'iptv-tester:input';
 const USERNAME_STORAGE_KEY = 'iptv-tester:xtream-username';
 
@@ -632,7 +632,7 @@ let testSession = 0;
 let toastTimer = null;
 
 function shouldUseProxy(url) {
-  if (!PROXY) return false;
+  if (!getProxyBase()) return false;
   try {
     return new URL(url).origin !== location.origin;
   } catch {
@@ -640,8 +640,19 @@ function shouldUseProxy(url) {
   }
 }
 
+function getProxyKind() {
+  if (location.protocol === 'https:') return 'cloudflare';
+  return '';
+}
+
+function getProxyBase() {
+  const kind = getProxyKind();
+  if (kind === 'cloudflare') return CLOUDFLARE_PROXY;
+  return '';
+}
+
 function buildProxyUrl(entry) {
-  const proxyUrl = new URL(PROXY);
+  const proxyUrl = new URL(getProxyBase(), location.href);
   proxyUrl.searchParams.set('url', entry.url);
   if (entry.mode === 'xtream') {
     proxyUrl.searchParams.set('mode', 'xtream');
@@ -856,7 +867,16 @@ async function testOne(entry) {
     if (entry.mode === 'xtream') {
       const portalStatus = usingProxy ? resp.headers.get('X-Portal-Status') : null;
       if (portalStatus === 'ok') {
-        return { ok: true, ms, httpStatus, message: 'Xtream portal authenticated' };
+        const proxyKind = getProxyKind();
+        return {
+          ok: true,
+          ms,
+          httpStatus,
+          viaCloudflare: proxyKind === 'cloudflare',
+          message: proxyKind === 'cloudflare'
+            ? 'Xtream portal authenticated from Cloudflare proxy'
+            : 'Xtream portal authenticated',
+        };
       }
       if (usingProxy && !portalStatus) {
         return {
@@ -909,7 +929,14 @@ async function testOne(entry) {
       return { ok: false, ms, httpStatus: resp.status, kind: 'down', message: `HTTP ${resp.status}` };
     }
 
-    return { ok: true, ms, httpStatus: usingProxy ? httpStatus : null };
+    const proxyKind = getProxyKind();
+    return {
+      ok: true,
+      ms,
+      httpStatus: usingProxy ? httpStatus : null,
+      viaCloudflare: proxyKind === 'cloudflare',
+      message: proxyKind === 'cloudflare' ? 'Target responded from Cloudflare proxy' : '',
+    };
   } catch (e) {
     const ms = Date.now() - start;
     return { ok: false, ms, kind: e.name === 'TimeoutError' ? 'timeout' : 'down' };
@@ -971,7 +998,7 @@ function updateRow(row, result) {
     dot.className = 'dot ok';
     time.textContent = `${result.ms}ms`;
     tag.className = 'tag ok';
-    tag.textContent = 'UP';
+    tag.textContent = result.viaCloudflare ? 'PROXY' : 'UP';
   } else if (result.kind === 'auth') {
     dot.className = 'dot auth';
     time.textContent = result.ms ? `${result.ms}ms` : '';
@@ -1030,6 +1057,11 @@ function sortAndAnimate(container, entries) {
 }
 
 async function testAll() {
+  if (!getProxyKind()) {
+    showToast('Open the GitHub HTTPS page to run Cloudflare checks');
+    return;
+  }
+
   const text = document.getElementById('servers').value;
   const rawUsername = document.getElementById('xtreamUsername').value.trim();
   const rawPassword = document.getElementById('xtreamPassword').value.trim();
@@ -1107,6 +1139,18 @@ document.getElementById('xtreamUsername').addEventListener('input', () => {
   try { localStorage.setItem(USERNAME_STORAGE_KEY, document.getElementById('xtreamUsername').value); } catch {}
 });
 
+function updateRuntimeInfo() {
+  const el = document.getElementById('runtimeInfo');
+  const kind = getProxyKind();
+  if (kind === 'cloudflare') {
+    el.textContent = 'via Cloudflare Workers proxy · results can differ from local IPTV apps';
+    document.getElementById('okLabel').textContent = 'proxy up';
+  } else {
+    el.textContent = 'open the GitHub HTTPS page to run Cloudflare checks';
+    document.getElementById('okLabel').textContent = 'up';
+  }
+}
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
@@ -1122,6 +1166,7 @@ document.addEventListener('keydown', e => {
     if (savedUsername) document.getElementById('xtreamUsername').value = savedUsername;
   } catch {}
   updateUrlCount();
+  updateRuntimeInfo();
 })();
 
 if ('serviceWorker' in navigator) {

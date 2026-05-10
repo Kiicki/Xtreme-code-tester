@@ -13,14 +13,12 @@
 // Origin (curl, direct browser navigation) are allowed for debugging.
 const ALLOWED_ORIGINS = new Set([
   'https://kiicki.github.io',
-  'null',          // file:// in some browsers
 ]);
 
 function isAllowedOrigin(origin) {
   if (!origin) return true;
   if (ALLOWED_ORIGINS.has(origin)) return true;
-  // Allow any localhost / 127.0.0.1 port for local development.
-  return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+  return false;
 }
 
 export default {
