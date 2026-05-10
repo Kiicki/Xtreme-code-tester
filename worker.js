@@ -126,13 +126,11 @@ async function checkXtreamPortal(targetUrl, username, password, corsHeaders) {
   const apiUrl = buildXtreamApiUrl(targetUrl, username, password);
 
   try {
-    const upstream = await fetch(apiUrl.toString(), {
-      method: 'GET',
+    const upstream = await fetchSameHost(apiUrl, {
       headers: {
         'Accept': 'application/json, text/plain, */*',
         'User-Agent': 'Mozilla/5.0 IPTV-Tester',
       },
-      redirect: 'follow',
       signal: AbortSignal.timeout(15000),
     });
 
@@ -168,25 +166,91 @@ async function checkXtreamPortal(targetUrl, username, password, corsHeaders) {
     }
 
     const portalStatus = getXtreamPortalStatus(payload);
-    if (portalStatus === 'ok') {
+    if (portalStatus !== 'ok') {
+      const status = portalStatus === 'invalid-auth' ? 401 : 403;
       return new Response(null, {
-        status: 200,
-        headers: { ...baseHeaders, 'X-Portal-Status': 'ok' },
+        status,
+        headers: { ...baseHeaders, 'X-Portal-Status': portalStatus },
       });
     }
 
-    const status = portalStatus === 'invalid-auth' ? 401 : 403;
+    const categoriesUrl = new URL(apiUrl.toString());
+    categoriesUrl.searchParams.set('action', 'get_live_categories');
+    const categories = await fetchSameHost(categoriesUrl, {
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'Mozilla/5.0 IPTV-Tester',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!categories.ok) {
+      if (categories.body) {
+        try { await categories.body.cancel(); } catch {}
+      }
+      return new Response(null, {
+        status: categories.status,
+        statusText: categories.statusText,
+        headers: {
+          ...baseHeaders,
+          'X-Upstream-Status': String(categories.status),
+          'X-Portal-Status': 'categories-error',
+        },
+      });
+    }
+
+    if (!await isJsonArrayResponse(categories)) {
+      return json(
+        { error: 'Portal did not return live categories' },
+        502,
+        { ...baseHeaders, 'X-Portal-Status': 'categories-error' }
+      );
+    }
+
     return new Response(null, {
-      status,
-      headers: { ...baseHeaders, 'X-Portal-Status': portalStatus },
+      status: 200,
+      headers: { ...baseHeaders, 'X-Portal-Status': 'ok' },
     });
   } catch (e) {
+    const portalStatus = e.message === 'Cross-host redirect' ? 'redirected' : 'unreachable';
     return json(
       { error: e.name === 'TimeoutError' ? 'Upstream timeout' : 'Upstream unreachable' },
       502,
-      { ...corsHeaders, 'X-Proxy-Status': 'error', 'X-Portal-Status': 'unreachable' }
+      { ...corsHeaders, 'X-Proxy-Status': 'error', 'X-Portal-Status': portalStatus }
     );
   }
+}
+
+async function fetchSameHost(url, init, redirects = 0) {
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    ...init,
+    redirect: 'manual',
+  });
+
+  if (![301, 302, 303, 307, 308].includes(response.status)) {
+    return response;
+  }
+
+  if (redirects >= 3) {
+    throw new Error('Too many redirects');
+  }
+
+  const location = response.headers.get('Location');
+  if (!location) {
+    return response;
+  }
+
+  if (response.body) {
+    try { await response.body.cancel(); } catch {}
+  }
+
+  const next = new URL(location, url);
+  if (next.hostname !== url.hostname) {
+    throw new Error('Cross-host redirect');
+  }
+
+  return fetchSameHost(next, init, redirects + 1);
 }
 
 function buildXtreamApiUrl(targetUrl, username, password) {
@@ -218,6 +282,20 @@ function getXtreamPortalStatus(payload) {
   if (status && status !== 'active') return 'inactive';
 
   return 'ok';
+}
+
+async function isJsonArrayResponse(response) {
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    if (response.body) {
+      try { await response.body.cancel(); } catch {}
+    }
+    return false;
+  }
+
+  return Array.isArray(payload);
 }
 
 function json(body, status, headers) {

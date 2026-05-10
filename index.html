@@ -821,10 +821,12 @@ function isAuthStatus(status) {
 function portalMessage(status) {
   return ({
     'bad-response': 'Xtream portal did not return valid API data',
+    'categories-error': 'Xtream portal login worked, but portal data could not be loaded',
     'http-error': 'Xtream portal returned an HTTP error',
     'inactive': 'Xtream account is not active',
     'invalid-auth': 'Xtream username or password was rejected',
     'missing-credentials': 'Xtream username/password is missing',
+    'redirected': 'Xtream portal redirected to another host',
     'unreachable': 'Xtream portal is unreachable',
   })[status] || 'Xtream portal check failed';
 }
