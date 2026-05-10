@@ -31,6 +31,8 @@
     --accent-fg: #0a0a0a;
     --ok: #10b981;
     --ok-soft: rgba(16, 185, 129, 0.14);
+    --auth: #f59e0b;
+    --auth-soft: rgba(245, 158, 11, 0.14);
     --fail: #ef4444;
     --fail-soft: rgba(239, 68, 68, 0.14);
     --pending: #525252;
@@ -54,6 +56,7 @@
       --accent: #0a0a0a;
       --accent-fg: #ffffff;
       --ok-soft: rgba(16, 185, 129, 0.12);
+      --auth-soft: rgba(245, 158, 11, 0.12);
       --fail-soft: rgba(239, 68, 68, 0.12);
       --shadow: 0 0 0 1px var(--border), 0 4px 12px rgba(0,0,0,0.04);
     }
@@ -162,6 +165,39 @@
   }
   textarea:focus { border-color: var(--border-strong); }
   textarea::placeholder { color: var(--text-subtle); }
+
+  .credentials {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .field {
+    min-width: 0;
+  }
+
+  .field label {
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  .field input {
+    width: 100%;
+    min-height: 38px;
+    padding: 9px 11px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  .field input:focus { border-color: var(--border-strong); }
+  .field input::placeholder { color: var(--text-subtle); }
 
   .input-meta {
     display: flex;
@@ -307,6 +343,7 @@
   }
 
   .stat.ok .num { color: var(--ok); }
+  .stat.auth .num { color: var(--auth); }
   .stat.fail .num { color: var(--fail); }
 
   .progress {
@@ -318,6 +355,7 @@
     display: flex;
   }
   .progress-ok { background: var(--ok); transition: width 0.25s ease; }
+  .progress-auth { background: var(--auth); transition: width 0.25s ease; }
   .progress-fail { background: var(--fail); transition: width 0.25s ease; }
 
   .results { display: none; }
@@ -342,6 +380,7 @@
     transition: all 0.2s;
   }
   .dot.ok { background: var(--ok); box-shadow: 0 0 0 4px var(--ok-soft); }
+  .dot.auth { background: var(--auth); box-shadow: 0 0 0 4px var(--auth-soft); }
   .dot.fail { background: var(--fail); box-shadow: 0 0 0 4px var(--fail-soft); }
   .dot.spin { animation: pulse 1.4s ease-in-out infinite; }
 
@@ -386,6 +425,7 @@
     color: var(--text-muted);
   }
   .tag.ok { color: var(--ok); background: var(--ok-soft); }
+  .tag.auth { color: var(--auth); background: var(--auth-soft); }
   .tag.fail { color: var(--fail); background: var(--fail-soft); }
 
   .row-copy {
@@ -459,6 +499,7 @@
 
   /* Phone */
   @media (max-width: 480px) {
+    .credentials { grid-template-columns: 1fr; }
     .row { gap: 10px; }
     .row-url { font-size: 12.5px; }
     .row-meta { font-size: 11px; gap: 6px; }
@@ -524,10 +565,20 @@
           </svg>
         </button>
       </div>
-      <textarea id="servers" placeholder="http://server-1.example.com&#10;http://server-2.example.com|username|password&#10;http://server-3.example.com/get.php?username=user&amp;password=pass" spellcheck="false"></textarea>
+      <textarea id="servers" placeholder="http://server-1.example.com&#10;http://server-2.example.com&#10;http://server-3.example.com/get.php?username=user&amp;password=pass" spellcheck="false"></textarea>
       <div class="input-meta">
-        <p class="hint">One target per line · Xtream: URL|user|pass · <kbd>Ctrl</kbd>+<kbd>Enter</kbd></p>
+        <p class="hint">One target per line · <kbd>Ctrl</kbd>+<kbd>Enter</kbd></p>
         <span class="url-count hidden" id="urlCount">0 URLs</span>
+      </div>
+      <div class="credentials">
+        <div class="field">
+          <label for="xtreamUsername">Xtream username</label>
+          <input id="xtreamUsername" type="text" inputmode="text" autocomplete="username" spellcheck="false" placeholder="Username">
+        </div>
+        <div class="field">
+          <label for="xtreamPassword">Xtream password</label>
+          <input id="xtreamPassword" type="password" autocomplete="current-password" spellcheck="false" placeholder="Password">
+        </div>
       </div>
       <div class="actions">
         <button class="primary" id="testBtn" onclick="testAll()">Check all</button>
@@ -546,6 +597,7 @@
       <div class="summary-row">
         <div class="summary-stats">
           <div class="stat ok"><span class="num" id="okCount">0</span><span>up</span></div>
+          <div class="stat auth"><span class="num" id="authCount">0</span><span>auth</span></div>
           <div class="stat fail"><span class="num" id="failCount">0</span><span>down</span></div>
           <div class="stat"><span class="num" id="totalCount">0/0</span><span>done</span></div>
         </div>
@@ -558,6 +610,7 @@
       </div>
       <div class="progress">
         <div class="progress-ok" id="progressOk" style="width:0%"></div>
+        <div class="progress-auth" id="progressAuth" style="width:0%"></div>
         <div class="progress-fail" id="progressFail" style="width:0%"></div>
       </div>
     </div>
@@ -573,6 +626,7 @@
 <script>
 const PROXY = 'https://iptv-tester-proxy.kulasic-igor.workers.dev';
 const STORAGE_KEY = 'iptv-tester:input';
+const USERNAME_STORAGE_KEY = 'iptv-tester:xtream-username';
 
 let testSession = 0;
 let toastTimer = null;
@@ -651,7 +705,13 @@ function buildEntry(rawUrl, username, password) {
   }
 }
 
-function parseTargetLine(line) {
+function getSharedCredentials() {
+  const username = document.getElementById('xtreamUsername').value.trim();
+  const password = document.getElementById('xtreamPassword').value.trim();
+  return username && password ? { username, password } : { username: '', password: '' };
+}
+
+function parseTargetLine(line, defaults = {}) {
   const trimmed = line.trim();
   if (!trimmed) return null;
 
@@ -682,15 +742,17 @@ function parseTargetLine(line) {
     }
   }
 
-  return buildEntry(rawUrl, username, password);
+  const finalUsername = username && password ? username : defaults.username || '';
+  const finalPassword = username && password ? password : defaults.password || '';
+  return buildEntry(rawUrl, finalUsername, finalPassword);
 }
 
-function extractEntries(text) {
+function extractEntries(text, defaults = {}) {
   const entries = [];
   const seen = new Set();
 
   for (const line of text.split(/\r?\n/)) {
-    const entry = parseTargetLine(line);
+    const entry = parseTargetLine(line, defaults);
     if (!entry || seen.has(entry.key)) continue;
     seen.add(entry.key);
     entries.push(entry);
@@ -752,6 +814,10 @@ function isGoodStatus(status) {
   return status >= 200 && status < 400;
 }
 
+function isAuthStatus(status) {
+  return status === 401 || status === 403;
+}
+
 function portalMessage(status) {
   return ({
     'bad-response': 'Xtream portal did not return valid API data',
@@ -790,17 +856,51 @@ async function testOne(entry) {
       if (portalStatus === 'ok') {
         return { ok: true, ms, httpStatus, message: 'Xtream portal authenticated' };
       }
+      if (usingProxy && !portalStatus) {
+        return {
+          ok: false,
+          ms,
+          httpStatus,
+          kind: 'down',
+          message: 'Cloudflare Worker is not updated for Xtream checks',
+        };
+      }
+      const authFailed = portalStatus === 'invalid-auth' || isAuthStatus(resp.status);
       return {
         ok: false,
         ms,
         httpStatus,
         kind: 'down',
-        message: portalStatus ? portalMessage(portalStatus) : 'Xtream portal could not be verified',
+        message: portalStatus
+          ? portalMessage(portalStatus)
+          : authFailed
+            ? 'Xtream portal rejected the supplied credentials'
+            : 'Xtream portal could not be verified',
+      };
+    }
+
+    if (usingProxy && isAuthStatus(resp.status)) {
+      return {
+        ok: false,
+        ms,
+        httpStatus,
+        kind: 'auth',
+        message: `Server responded with HTTP ${httpStatus} and requires authentication`,
       };
     }
 
     if (usingProxy && !isGoodStatus(resp.status)) {
       return { ok: false, ms, httpStatus, kind: 'down', message: `HTTP ${httpStatus}` };
+    }
+
+    if (!usingProxy && resp.type !== 'opaque' && isAuthStatus(resp.status)) {
+      return {
+        ok: false,
+        ms,
+        httpStatus: resp.status,
+        kind: 'auth',
+        message: `Server responded with HTTP ${resp.status} and requires authentication`,
+      };
     }
 
     if (!usingProxy && resp.type !== 'opaque' && !isGoodStatus(resp.status)) {
@@ -870,6 +970,11 @@ function updateRow(row, result) {
     time.textContent = `${result.ms}ms`;
     tag.className = 'tag ok';
     tag.textContent = 'UP';
+  } else if (result.kind === 'auth') {
+    dot.className = 'dot auth';
+    time.textContent = result.ms ? `${result.ms}ms` : '';
+    tag.className = 'tag auth';
+    tag.textContent = 'AUTH';
   } else {
     dot.className = 'dot fail';
     time.textContent = result.ms ? `${result.ms}ms` : '';
@@ -881,20 +986,29 @@ function updateRow(row, result) {
     .join(' · ');
 }
 
-function setSummary(ok, fail, total) {
+function setSummary(ok, auth, fail, total) {
   document.getElementById('okCount').textContent = ok;
+  document.getElementById('authCount').textContent = auth;
   document.getElementById('failCount').textContent = fail;
-  document.getElementById('totalCount').textContent = `${ok + fail}/${total}`;
+  document.getElementById('totalCount').textContent = `${ok + auth + fail}/${total}`;
   document.getElementById('progressOk').style.width = `${(ok / total) * 100}%`;
+  document.getElementById('progressAuth').style.width = `${(auth / total) * 100}%`;
   document.getElementById('progressFail').style.width = `${(fail / total) * 100}%`;
 }
 
 function sortAndAnimate(container, entries) {
-  // Sort: UP before DOWN, then by response time ascending.
+  // Sort: UP before AUTH before DOWN, then by response time ascending.
+  const rank = (result) => {
+    if (!result) return 3;
+    if (result.ok) return 0;
+    if (result.kind === 'auth') return 1;
+    return 2;
+  };
   entries.sort((a, b) => {
     if (!a.result) return 1;
     if (!b.result) return -1;
-    if (a.result.ok !== b.result.ok) return a.result.ok ? -1 : 1;
+    const statusDelta = rank(a.result) - rank(b.result);
+    if (statusDelta !== 0) return statusDelta;
     return (a.result.ms ?? Infinity) - (b.result.ms ?? Infinity);
   });
 
@@ -915,7 +1029,14 @@ function sortAndAnimate(container, entries) {
 
 async function testAll() {
   const text = document.getElementById('servers').value;
-  const entries = extractEntries(text);
+  const rawUsername = document.getElementById('xtreamUsername').value.trim();
+  const rawPassword = document.getElementById('xtreamPassword').value.trim();
+  if ((rawUsername || rawPassword) && !(rawUsername && rawPassword)) {
+    showToast('Enter both Xtream username and password');
+    return;
+  }
+
+  const entries = extractEntries(text, getSharedCredentials());
   if (entries.length === 0) {
     showToast('Paste at least one target');
     return;
@@ -931,7 +1052,7 @@ async function testAll() {
   results.innerHTML = '';
   results.style.display = 'block';
   summary.style.display = 'block';
-  setSummary(0, 0, entries.length);
+  setSummary(0, 0, 0, entries.length);
 
   const rows = entries.map(entry => {
     const el = buildRow(entry);
@@ -939,14 +1060,16 @@ async function testAll() {
     return { entry, el, result: null };
   });
 
-  let okCount = 0, failCount = 0;
+  let okCount = 0, authCount = 0, failCount = 0;
   await Promise.all(rows.map(async (rowEntry) => {
     const result = await testOne(rowEntry.entry);
     if (session !== testSession) return;
     rowEntry.result = result;
     updateRow(rowEntry.el, result);
-    if (result.ok) okCount++; else failCount++;
-    setSummary(okCount, failCount, entries.length);
+    if (result.ok) okCount++;
+    else if (result.kind === 'auth') authCount++;
+    else failCount++;
+    setSummary(okCount, authCount, failCount, entries.length);
   }));
 
   if (session !== testSession) return;
@@ -961,6 +1084,9 @@ function clearAll() {
   btn.disabled = false;
   btn.textContent = 'Check all';
   document.getElementById('servers').value = '';
+  document.getElementById('xtreamUsername').value = '';
+  document.getElementById('xtreamPassword').value = '';
+  try { localStorage.removeItem(USERNAME_STORAGE_KEY); } catch {}
   document.getElementById('servers').dispatchEvent(new Event('input'));
   const results = document.getElementById('results');
   const summary = document.getElementById('summary');
@@ -975,6 +1101,10 @@ document.getElementById('servers').addEventListener('input', () => {
   updateUrlCount();
 });
 
+document.getElementById('xtreamUsername').addEventListener('input', () => {
+  try { localStorage.setItem(USERNAME_STORAGE_KEY, document.getElementById('xtreamUsername').value); } catch {}
+});
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
@@ -986,6 +1116,8 @@ document.addEventListener('keydown', e => {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) document.getElementById('servers').value = saved;
+    const savedUsername = localStorage.getItem(USERNAME_STORAGE_KEY);
+    if (savedUsername) document.getElementById('xtreamUsername').value = savedUsername;
   } catch {}
   updateUrlCount();
 })();
