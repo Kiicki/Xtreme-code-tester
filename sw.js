@@ -1,5 +1,5 @@
 // Bump this string when shipping changes that should force-refresh the cache.
-const CACHE = 'pulse-v5';
+const CACHE = 'pulse-v6';
 const SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg', './icon-maskable.svg'];
 
 self.addEventListener('install', (event) => {

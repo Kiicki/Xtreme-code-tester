@@ -516,7 +516,7 @@
   <div class="card">
     <div class="input-section">
       <div class="label-row">
-        <label for="servers">Server URLs</label>
+        <label for="servers">Server URLs / Xtream portals</label>
         <button class="icon-only" onclick="pasteFromClipboard()" title="Paste from clipboard" aria-label="Paste">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
@@ -524,9 +524,9 @@
           </svg>
         </button>
       </div>
-      <textarea id="servers" placeholder="http://server-1.example.com&#10;http://server-2.example.com&#10;http://server-3.example.com" spellcheck="false"></textarea>
+      <textarea id="servers" placeholder="http://server-1.example.com&#10;http://server-2.example.com|username|password&#10;http://server-3.example.com/get.php?username=user&amp;password=pass" spellcheck="false"></textarea>
       <div class="input-meta">
-        <p class="hint">One URL per line · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> to run</p>
+        <p class="hint">One target per line · Xtream: URL|user|pass · <kbd>Ctrl</kbd>+<kbd>Enter</kbd></p>
         <span class="url-count hidden" id="urlCount">0 URLs</span>
       </div>
       <div class="actions">
@@ -577,23 +577,126 @@ const STORAGE_KEY = 'iptv-tester:input';
 let testSession = 0;
 let toastTimer = null;
 
-function needsProxy(url) {
-  return location.protocol === 'https:' && /^http:\/\//i.test(url);
-}
-
-function proxify(url) {
-  if (PROXY && needsProxy(url)) {
-    return `${PROXY.replace(/\/$/, '')}/?url=${encodeURIComponent(url)}`;
+function shouldUseProxy(url) {
+  if (!PROXY) return false;
+  try {
+    return new URL(url).origin !== location.origin;
+  } catch {
+    return false;
   }
-  return url;
 }
 
-function extractUrls(text) {
-  const matches = text.match(/https?:\/\/[^\s,;<>"']+/gi) || [];
-  const cleaned = matches
-    .map(u => u.replace(/[).,;:]+$/, '').replace(/\/$/, ''))
-    .filter(Boolean);
-  return [...new Set(cleaned)];
+function buildProxyUrl(entry) {
+  const proxyUrl = new URL(PROXY);
+  proxyUrl.searchParams.set('url', entry.url);
+  if (entry.mode === 'xtream') {
+    proxyUrl.searchParams.set('mode', 'xtream');
+    proxyUrl.searchParams.set('username', entry.username);
+    proxyUrl.searchParams.set('password', entry.password);
+  }
+  return proxyUrl.toString();
+}
+
+function buildDirectTargetUrl(entry) {
+  if (entry.mode !== 'xtream') return entry.url;
+  const base = entry.url.endsWith('/') ? entry.url : `${entry.url}/`;
+  const apiUrl = new URL('player_api.php', base);
+  apiUrl.searchParams.set('username', entry.username);
+  apiUrl.searchParams.set('password', entry.password);
+  return apiUrl.toString();
+}
+
+function cleanUrl(rawUrl) {
+  return rawUrl.replace(/[).,;:]+$/, '').trim();
+}
+
+function stripTrailingSlash(url) {
+  return url.replace(/\/+$/, '');
+}
+
+function xtreamBaseFromUrl(urlObj) {
+  const base = new URL(urlObj.toString());
+  base.search = '';
+  base.hash = '';
+
+  if (/\/(?:get|player_api|xmltv)\.php$/i.test(base.pathname)) {
+    const directory = new URL('.', base);
+    base.pathname = directory.pathname;
+  }
+
+  return stripTrailingSlash(base.toString());
+}
+
+function buildEntry(rawUrl, username, password) {
+  try {
+    const parsed = new URL(cleanUrl(rawUrl));
+    parsed.hash = '';
+
+    const hasCredentials = Boolean(username && password);
+    const mode = hasCredentials ? 'xtream' : 'http';
+    const url = mode === 'xtream'
+      ? xtreamBaseFromUrl(parsed)
+      : stripTrailingSlash(parsed.toString());
+
+    return {
+      url,
+      mode,
+      username: username || '',
+      password: password || '',
+      label: mode === 'xtream' ? `${url} [Xtream]` : url,
+      key: mode === 'xtream' ? `${mode}:${url}:${username}:${password}` : `${mode}:${url}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function parseTargetLine(line) {
+  const trimmed = line.trim();
+  if (!trimmed) return null;
+
+  const pipeParts = trimmed.split('|').map(part => part.trim());
+  if (pipeParts.length >= 3 && /^https?:\/\//i.test(pipeParts[0])) {
+    return buildEntry(pipeParts[0], pipeParts[1], pipeParts[2]);
+  }
+
+  const match = trimmed.match(/https?:\/\/[^\s|,;<>"']+/i);
+  if (!match) return null;
+
+  const rawUrl = cleanUrl(match[0]);
+  let username = '';
+  let password = '';
+
+  try {
+    const parsed = new URL(rawUrl);
+    username = parsed.searchParams.get('username') || '';
+    password = parsed.searchParams.get('password') || '';
+  } catch {}
+
+  if (!username || !password) {
+    const rest = trimmed.slice(match.index + match[0].length).trim();
+    const tokens = rest.split(/[\s|]+/).filter(Boolean);
+    if (tokens.length >= 2) {
+      username = tokens[0];
+      password = tokens[1];
+    }
+  }
+
+  return buildEntry(rawUrl, username, password);
+}
+
+function extractEntries(text) {
+  const entries = [];
+  const seen = new Set();
+
+  for (const line of text.split(/\r?\n/)) {
+    const entry = parseTargetLine(line);
+    if (!entry || seen.has(entry.key)) continue;
+    seen.add(entry.key);
+    entries.push(entry);
+  }
+
+  return entries;
 }
 
 function showToast(message) {
@@ -605,9 +708,9 @@ function showToast(message) {
 }
 
 function updateUrlCount() {
-  const count = extractUrls(document.getElementById('servers').value).length;
+  const count = extractEntries(document.getElementById('servers').value).length;
   const el = document.getElementById('urlCount');
-  el.textContent = count === 1 ? '1 URL' : `${count} URLs`;
+  el.textContent = count === 1 ? '1 target' : `${count} targets`;
   el.classList.toggle('hidden', count === 0);
 }
 
@@ -645,31 +748,73 @@ async function copyResults() {
   }
 }
 
-async function testOne(url) {
-  const usingProxy = needsProxy(url);
+function isGoodStatus(status) {
+  return status >= 200 && status < 400;
+}
+
+function portalMessage(status) {
+  return ({
+    'bad-response': 'Xtream portal did not return valid API data',
+    'http-error': 'Xtream portal returned an HTTP error',
+    'inactive': 'Xtream account is not active',
+    'invalid-auth': 'Xtream username or password was rejected',
+    'missing-credentials': 'Xtream username/password is missing',
+    'unreachable': 'Xtream portal is unreachable',
+  })[status] || 'Xtream portal check failed';
+}
+
+async function testOne(entry) {
+  const usingProxy = shouldUseProxy(entry.url);
   const start = Date.now();
   try {
-    const resp = await fetch(proxify(url), {
+    const resp = await fetch(usingProxy ? buildProxyUrl(entry) : buildDirectTargetUrl(entry), {
       mode: usingProxy ? 'cors' : 'no-cors',
       signal: AbortSignal.timeout(8000),
     });
     const ms = Date.now() - start;
     if (usingProxy && resp.headers.get('X-Proxy-Status') === 'error') {
-      return { ok: false, ms, kind: 'down' };
+      const portalStatus = resp.headers.get('X-Portal-Status');
+      return {
+        ok: false,
+        ms,
+        kind: portalStatus === 'unreachable' ? 'timeout' : 'down',
+        message: portalStatus ? portalMessage(portalStatus) : 'Proxy could not reach the target',
+      };
     }
-    // 5xx means the server itself is having problems (incl. Cloudflare 5xx
-    // edge codes like 521/522/523/524/530 indicating origin unreachable).
-    if (usingProxy && resp.status >= 500) {
-      return { ok: false, ms, httpStatus: resp.status, kind: 'down' };
+
+    const proxyStatus = Number(resp.headers.get('X-Upstream-Status') || resp.status);
+    const httpStatus = Number.isFinite(proxyStatus) && proxyStatus > 0 ? proxyStatus : resp.status;
+
+    if (entry.mode === 'xtream') {
+      const portalStatus = usingProxy ? resp.headers.get('X-Portal-Status') : null;
+      if (portalStatus === 'ok') {
+        return { ok: true, ms, httpStatus, message: 'Xtream portal authenticated' };
+      }
+      return {
+        ok: false,
+        ms,
+        httpStatus,
+        kind: 'down',
+        message: portalStatus ? portalMessage(portalStatus) : 'Xtream portal could not be verified',
+      };
     }
-    return { ok: true, ms, httpStatus: usingProxy ? resp.status : null };
+
+    if (usingProxy && !isGoodStatus(resp.status)) {
+      return { ok: false, ms, httpStatus, kind: 'down', message: `HTTP ${httpStatus}` };
+    }
+
+    if (!usingProxy && resp.type !== 'opaque' && !isGoodStatus(resp.status)) {
+      return { ok: false, ms, httpStatus: resp.status, kind: 'down', message: `HTTP ${resp.status}` };
+    }
+
+    return { ok: true, ms, httpStatus: usingProxy ? httpStatus : null };
   } catch (e) {
     const ms = Date.now() - start;
     return { ok: false, ms, kind: e.name === 'TimeoutError' ? 'timeout' : 'down' };
   }
 }
 
-function buildRow(url) {
+function buildRow(entry) {
   const row = document.createElement('div');
   row.className = 'row';
 
@@ -678,8 +823,8 @@ function buildRow(url) {
 
   const urlEl = document.createElement('div');
   urlEl.className = 'row-url';
-  urlEl.textContent = url;
-  urlEl.title = url;
+  urlEl.textContent = entry.label;
+  urlEl.title = entry.label;
 
   const meta = document.createElement('div');
   meta.className = 'row-meta';
@@ -699,7 +844,7 @@ function buildRow(url) {
   copyBtn.title = 'Copy URL';
   copyBtn.setAttribute('aria-label', 'Copy URL');
   copyBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
-  copyBtn.addEventListener('click', () => copyRowUrl(url, copyBtn));
+  copyBtn.addEventListener('click', () => copyRowUrl(entry.url, copyBtn));
 
   row.append(dot, urlEl, meta, copyBtn);
   return row;
@@ -731,7 +876,9 @@ function updateRow(row, result) {
     tag.className = 'tag fail';
     tag.textContent = result.kind === 'timeout' ? 'TIMEOUT' : 'DOWN';
   }
-  tag.title = result.httpStatus ? `HTTP ${result.httpStatus}` : '';
+  tag.title = [result.message, result.httpStatus ? `HTTP ${result.httpStatus}` : '']
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function setSummary(ok, fail, total) {
@@ -768,9 +915,9 @@ function sortAndAnimate(container, entries) {
 
 async function testAll() {
   const text = document.getElementById('servers').value;
-  const urls = extractUrls(text);
-  if (urls.length === 0) {
-    showToast('Paste at least one URL');
+  const entries = extractEntries(text);
+  if (entries.length === 0) {
+    showToast('Paste at least one target');
     return;
   }
 
@@ -784,22 +931,22 @@ async function testAll() {
   results.innerHTML = '';
   results.style.display = 'block';
   summary.style.display = 'block';
-  setSummary(0, 0, urls.length);
+  setSummary(0, 0, entries.length);
 
-  const rows = urls.map(url => {
-    const el = buildRow(url);
+  const rows = entries.map(entry => {
+    const el = buildRow(entry);
     results.appendChild(el);
-    return { url, el, result: null };
+    return { entry, el, result: null };
   });
 
   let okCount = 0, failCount = 0;
-  await Promise.all(rows.map(async (entry) => {
-    const result = await testOne(entry.url);
+  await Promise.all(rows.map(async (rowEntry) => {
+    const result = await testOne(rowEntry.entry);
     if (session !== testSession) return;
-    entry.result = result;
-    updateRow(entry.el, result);
+    rowEntry.result = result;
+    updateRow(rowEntry.el, result);
     if (result.ok) okCount++; else failCount++;
-    setSummary(okCount, failCount, urls.length);
+    setSummary(okCount, failCount, entries.length);
   }));
 
   if (session !== testSession) return;
